@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-soil-100 text-leaf-900 font-sans antialiased;
+    /* Keeps content clear of phone notches and home indicators. */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Bright-sunlight readability: heavy weight and high contrast by default. */
+  h1,
+  h2,
+  h3 {
+    @apply font-extrabold tracking-tight;
+  }
+
+  :focus-visible {
+    @apply outline outline-4 outline-offset-2 outline-leaf-500;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply flex min-h-touch w-full items-center justify-center gap-3 rounded-2xl bg-leaf-600
+      px-5 text-lg font-extrabold uppercase tracking-wide text-white shadow-card
+      active:translate-y-0.5 active:shadow-none disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply flex min-h-touch w-full items-center justify-center gap-3 rounded-2xl border-4
+      border-leaf-600 bg-white px-5 text-lg font-extrabold uppercase tracking-wide text-leaf-700
+      shadow-card active:translate-y-0.5 active:shadow-none disabled:opacity-50;
+  }
+
+  .card {
+    @apply rounded-2xl border-2 border-soil-200 bg-white p-4 shadow-card;
+  }
+}

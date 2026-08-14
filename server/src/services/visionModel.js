@@ -1,0 +1,114 @@
+import crypto from 'node:crypto';
+
+import { knownLabels } from './adviceCatalog.js';
+
+/**
+ * PLACEHOLDER image classifier.
+ *
+ * Wire your own model here. Contract expected by the rest of the app:
+ *   classifyImage({ buffer, mimeType }) -> {
+ *     label: string,                                  // key in adviceCatalog, or 'unknown'
+ *     confidence: number,                             // 0..1
+ *     alternatives: [{ label: string, confidence: number }],
+ *     source: 'mock' | 'remote',
+ *   }
+ *
+ * With VISION_API_URL unset the deterministic mock below runs, so the whole flow works offline.
+ */
+
+const MOCK_LATENCY_MS = 700;
+
+export async function classifyImage({ buffer, mimeType }) {
+  const endpoint = process.env.VISION_API_URL;
+  if (!endpoint) {
+    return mockClassify(buffer);
+  }
+  return remoteClassify({ buffer, mimeType, endpoint });
+}
+
+async function remoteClassify({ buffer, mimeType, endpoint }) {
+  // --- Wire your model here -------------------------------------------------
+  // Most hosted vision endpoints take either multipart form data or a base64 payload.
+  // Adjust the request body and the response mapping to match your provider.
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(process.env.VISION_API_KEY ? { Authorization: `Bearer ${process.env.VISION_API_KEY}` } : {}),
+    },
+    body: JSON.stringify({
+      image: buffer.toString('base64'),
+      mime_type: mimeType,
+      labels: knownLabels(),
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    const error = new Error(`Vision API responded ${response.status}: ${detail.slice(0, 200)}`);
+    error.status = 502;
+    throw error;
+  }
+
+  const payload = await response.json();
+  const predictions = normalisePredictions(payload);
+  if (predictions.length === 0) {
+    return { label: 'unknown', confidence: 0, alternatives: [], source: 'remote' };
+  }
+  const [top, ...rest] = predictions;
+  return {
+    label: top.label,
+    confidence: top.confidence,
+    alternatives: rest.slice(0, 2),
+    source: 'remote',
+  };
+  // -------------------------------------------------------------------------
+}
+
+/**
+ * Maps a provider response onto `[{ label, confidence }]`, sorted best first.
+ * Accepts the two shapes most endpoints return: `{ predictions: [...] }` or `{ label, score }`.
+ */
+function normalisePredictions(payload) {
+  const raw = Array.isArray(payload)
+    ? payload
+    : (payload.predictions ?? payload.results ?? (payload.label ? [payload] : []));
+
+  return raw
+    .map((item) => ({
+      label: item.label ?? item.class ?? item.name ?? 'unknown',
+      confidence: Number(item.confidence ?? item.score ?? item.probability ?? 0),
+    }))
+    .filter((item) => Number.isFinite(item.confidence))
+    .sort((a, b) => b.confidence - a.confidence);
+}
+
+/**
+ * Deterministic stand-in: the same image always yields the same diagnosis, so the UI and the
+ * scan history behave predictably in development and demos.
+ */
+async function mockClassify(buffer) {
+  await new Promise((resolve) => setTimeout(resolve, MOCK_LATENCY_MS));
+
+  const labels = knownLabels();
+  const digest = crypto.createHash('sha256').update(buffer).digest();
+  const primary = labels[digest[0] % labels.length];
+  const secondary = labels[digest[1] % labels.length];
+  const tertiary = labels[digest[2] % labels.length];
+
+  const confidence = 0.55 + (digest[3] / 255) * 0.43;
+  const remaining = 1 - confidence;
+
+  const alternatives = [secondary, tertiary]
+    .filter((label, index, all) => label !== primary && all.indexOf(label) === index)
+    .map((label, index) => ({
+      label,
+      confidence: round(remaining * (index === 0 ? 0.6 : 0.25)),
+    }));
+
+  return { label: primary, confidence: round(confidence), alternatives, source: 'mock' };
+}
+
+function round(value) {
+  return Math.round(value * 100) / 100;
+}
