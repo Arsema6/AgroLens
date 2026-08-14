@@ -1,23 +1,45 @@
 /**
- * crop.health (Kindwise) provider.
+ * Kindwise providers: crop.health and plant.id.
  *
- * POST {endpoint}?details=...&language=... with `Api-Key` and `{ images: [base64] }`; the response
- * carries `result.crop.suggestions` (which plant) and `result.disease.suggestions` (what is wrong),
- * each with `name`, `probability` and the requested `details`. Docs: https://crop.kindwise.com/docs
+ * Both take POST {endpoint}?details=...&language=... with an `Api-Key` header and
+ * `{ images: [base64] }`, and both answer with `result.disease.suggestions` (what is wrong), each
+ * carrying `name`, `probability` and the requested `details`. crop.health adds
+ * `result.crop.suggestions` (which plant); plant.id adds `result.is_healthy`.
+ * Docs: https://crop.kindwise.com/docs and https://documenter.getpostman.com/view/24599534/2s93z5A4Su
  *
- * The `treatment` detail is what makes this provider worth the round trip: it already splits advice
- * into prevention / biological / chemical, which maps onto the cultural / organic / chemical actions
- * the results screen renders.
+ * The `treatment` detail is what makes these providers worth the round trip: it already splits
+ * advice into prevention / biological / chemical, which maps onto the cultural / organic / chemical
+ * actions the results screen renders.
  */
 
-const DEFAULT_ENDPOINT = 'https://crop.kindwise.com/api/v1/identification';
+/** A Kindwise key only works on the service it was issued for, so each one is configured here. */
+export const KINDWISE_SERVICES = {
+  'crop.health': {
+    endpoint: 'https://crop.kindwise.com/api/v1/identification',
+    // crop.health can return look-alike photos; AgroLens never shows them, so opt out.
+    extraBody: { similar_images: false },
+  },
+  'plant.id': {
+    endpoint: 'https://plant.id/api/v3/health_assessment',
+    // plant.id rejects unknown modifiers, and `similar_images` is not one of its own.
+    extraBody: {},
+  },
+};
+
 const DETAILS = 'description,treatment,type,common_names';
 const MAX_ALTERNATIVES = 2;
 const MAX_EXPLANATION_CHARS = 320;
 const MAX_DETAIL_CHARS = 260;
 
-export async function identifyWithCropHealth({ buffer, apiKey, endpoint, language = 'en' }) {
-  const url = new URL(endpoint || DEFAULT_ENDPOINT);
+export async function identifyWithKindwise({
+  buffer,
+  apiKey,
+  service = 'crop.health',
+  endpoint,
+  language = 'en',
+}) {
+  const config = KINDWISE_SERVICES[service] ?? KINDWISE_SERVICES['crop.health'];
+  const url = new URL(endpoint || config.endpoint);
   url.searchParams.set('details', DETAILS);
   url.searchParams.set('language', language);
 
@@ -26,10 +48,10 @@ export async function identifyWithCropHealth({ buffer, apiKey, endpoint, languag
     response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Api-Key': apiKey },
-      body: JSON.stringify({ images: [buffer.toString('base64')], similar_images: false }),
+      body: JSON.stringify({ images: [buffer.toString('base64')], ...config.extraBody }),
     });
   } catch (cause) {
-    const error = new Error('Could not reach the crop health service. Try again in a moment.');
+    const error = new Error('Could not reach the plant health service. Try again in a moment.');
     error.status = 502;
     error.cause = cause;
     throw error;
@@ -39,9 +61,9 @@ export async function identifyWithCropHealth({ buffer, apiKey, endpoint, languag
     const detail = await response.text().catch(() => '');
     // A bad or exhausted key is our problem, not the farmer's: the status text goes to the log via
     // `cause`, the screen just says to try again.
-    const error = new Error('The crop health service could not check this photo. Try again in a moment.');
+    const error = new Error('The plant health service could not check this photo. Try again in a moment.');
     error.status = 502;
-    error.cause = new Error(`crop.health responded ${response.status}: ${detail.slice(0, 200)}`);
+    error.cause = new Error(`${service} responded ${response.status}: ${detail.slice(0, 200)}`);
     throw error;
   }
 
@@ -49,8 +71,15 @@ export async function identifyWithCropHealth({ buffer, apiKey, endpoint, languag
 }
 
 export function mapIdentification(payload) {
-  const suggestions = payload?.result?.disease?.suggestions ?? [];
-  const crop = payload?.result?.crop?.suggestions?.[0]?.name ?? null;
+  const result = payload?.result ?? {};
+  const suggestions = result.disease?.suggestions ?? [];
+  const crop = result.crop?.suggestions?.[0]?.name ?? null;
+
+  // plant.id answers the healthy/not-healthy question directly; when it says healthy, the disease
+  // suggestions are just the closest matches and would read as a false alarm.
+  if (result.is_healthy?.binary === true) {
+    return { label: 'healthy', confidence: clamp(result.is_healthy.probability), alternatives: [], crop };
+  }
 
   if (suggestions.length === 0) {
     return { label: 'unknown', confidence: 0, alternatives: [], crop };

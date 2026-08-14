@@ -41,16 +41,16 @@ agrolens/
         storage.js             localStorage scan history
         imageUtils.js          downscale + JPEG encode before upload/storage
   server/
-    .env.example               PORT, CROP_HEALTH_API_KEY, VISION_API_URL/KEY
+    .env.example               PORT, Kindwise keys, VISION_API_URL/KEY
     src/
       index.js                 Express app
       routes/
         analyze.js             POST /api/analyze (multipart image)
         health.js              GET /api/health
       services/
-        visionModel.js         picks a provider: crop.health, your endpoint, or the mock
+        visionModel.js         picks a provider: Kindwise, your endpoint, or the mock
         providers/
-          cropHealth.js        crop.health (Kindwise) request + response mapping
+          kindwise.js          crop.health / plant.id request + response mapping
         adviceCatalog.js       label -> explanation + organic/chemical actions
       middleware/
         errorHandler.js        JSON error responses
@@ -72,15 +72,19 @@ credentials are set, most specific first:
 
 | Env | Provider |
 | --- | --- |
-| `CROP_HEALTH_API_KEY` | [crop.health](https://crop.kindwise.com/docs) (Kindwise) - crop disease/pest model |
+| `CROP_HEALTH_API_KEY` | [crop.health](https://crop.kindwise.com/docs) (Kindwise) - crop disease/pest model, also names the crop |
+| `PLANT_ID_API_KEY` | [plant.id](https://plant.id) (Kindwise) - wider plant health model, no crop name |
 | `VISION_API_URL` (+ optional `VISION_API_KEY`) | your own label/score endpoint |
-| neither | deterministic mock - same photo always gives the same diagnosis, works offline |
+| none | deterministic mock - same photo always gives the same diagnosis, works offline |
 
-`GET /api/health` reports which one is live. Optional overrides: `CROP_HEALTH_API_URL`,
-`CROP_HEALTH_LANGUAGE` (default `en`, and crop.health localises its advice text).
+A Kindwise key only works on the service it was issued for, so set the variable that matches your
+key; `GET /api/health` reports which provider is live. Optional overrides: `CROP_HEALTH_API_URL`,
+`PLANT_ID_API_URL`, `KINDWISE_LANGUAGE` (default `en`; Kindwise localises its advice text).
 
-crop.health returns a `treatment` detail already split into prevention / biological / chemical, which
-`providers/cropHealth.js` maps onto AgroLens' cultural / organic / chemical actions. Its label
-vocabulary is much larger than `adviceCatalog.js`, so advice is resolved as: our own catalog copy
+Both Kindwise services return a `treatment` detail already split into prevention / biological /
+chemical, which `providers/kindwise.js` maps onto AgroLens' cultural / organic / chemical actions.
+plant.id also returns a `is_healthy` verdict, which short-circuits to the `healthy` entry so a sound
+leaf is not reported as diseased. Their label vocabulary is much larger than `adviceCatalog.js`, so
+advice is resolved as: our own catalog copy
 when we have an entry for the label (it is written for low-literacy field use), otherwise the
 provider's text, backfilled from the fallback entry.
