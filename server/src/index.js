@@ -6,6 +6,7 @@ import express from 'express';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { analyzeRouter } from './routes/analyze.js';
 import { healthRouter } from './routes/health.js';
+import { describeProvider } from './services/visionModel.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
 
@@ -25,6 +26,5 @@ export function createApp() {
 }
 
 createApp().listen(PORT, () => {
-  const mode = process.env.VISION_API_URL ? 'remote vision API' : 'mock classifier';
-  console.log(`AgroLens API listening on http://localhost:${PORT} (${mode})`);
+  console.log(`AgroLens API listening on http://localhost:${PORT} (${describeProvider()})`);
 });

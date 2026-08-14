@@ -41,14 +41,16 @@ agrolens/
         storage.js             localStorage scan history
         imageUtils.js          downscale + JPEG encode before upload/storage
   server/
-    .env.example               PORT, VISION_API_URL, VISION_API_KEY
+    .env.example               PORT, CROP_HEALTH_API_KEY, VISION_API_URL/KEY
     src/
       index.js                 Express app
       routes/
         analyze.js             POST /api/analyze (multipart image)
         health.js              GET /api/health
       services/
-        visionModel.js         PLACEHOLDER model call - swap in your own API here
+        visionModel.js         picks a provider: crop.health, your endpoint, or the mock
+        providers/
+          cropHealth.js        crop.health (Kindwise) request + response mapping
         adviceCatalog.js       label -> explanation + organic/chemical actions
       middleware/
         errorHandler.js        JSON error responses
@@ -62,10 +64,23 @@ cp server/.env.example server/.env
 npm run dev          # client on :5173, API on :8787
 ```
 
-## Wiring your own model
+## The model
 
-`server/src/services/visionModel.js` exports `classifyImage({ buffer, mimeType })` and returns
-`{ label, confidence, alternatives }`. With `VISION_API_URL` unset it returns deterministic mock
-labels so the whole flow is usable offline; set `VISION_API_URL` / `VISION_API_KEY` and fill in the
-marked request/response mapping to use a real endpoint. Everything downstream (advice catalog, UI)
-keys off `label`, so no other file needs to change.
+`server/src/services/visionModel.js` is the only seam. `classifyImage({ buffer, mimeType })` returns
+`{ label, confidence, alternatives, source, crop?, advice? }`, and the provider is chosen by which
+credentials are set, most specific first:
+
+| Env | Provider |
+| --- | --- |
+| `CROP_HEALTH_API_KEY` | [crop.health](https://crop.kindwise.com/docs) (Kindwise) - crop disease/pest model |
+| `VISION_API_URL` (+ optional `VISION_API_KEY`) | your own label/score endpoint |
+| neither | deterministic mock - same photo always gives the same diagnosis, works offline |
+
+`GET /api/health` reports which one is live. Optional overrides: `CROP_HEALTH_API_URL`,
+`CROP_HEALTH_LANGUAGE` (default `en`, and crop.health localises its advice text).
+
+crop.health returns a `treatment` detail already split into prevention / biological / chemical, which
+`providers/cropHealth.js` maps onto AgroLens' cultural / organic / chemical actions. Its label
+vocabulary is much larger than `adviceCatalog.js`, so advice is resolved as: our own catalog copy
+when we have an entry for the label (it is written for low-literacy field use), otherwise the
+provider's text, backfilled from the fallback entry.

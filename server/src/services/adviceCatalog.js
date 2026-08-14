@@ -189,6 +189,10 @@ export function getAdvice(label) {
   return CATALOG[label] ?? UNKNOWN;
 }
 
+export function hasAdvice(label) {
+  return Object.hasOwn(CATALOG, label);
+}
+
 export function knownLabels() {
   return Object.keys(CATALOG);
 }

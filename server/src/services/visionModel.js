@@ -1,29 +1,50 @@
 import crypto from 'node:crypto';
 
 import { knownLabels } from './adviceCatalog.js';
+import { identifyWithCropHealth } from './providers/cropHealth.js';
 
 /**
- * PLACEHOLDER image classifier.
+ * The single seam between AgroLens and whatever names the problem in the photo.
  *
- * Wire your own model here. Contract expected by the rest of the app:
  *   classifyImage({ buffer, mimeType }) -> {
- *     label: string,                                  // key in adviceCatalog, or 'unknown'
+ *     label: string,                                  // key in adviceCatalog, or a provider slug
  *     confidence: number,                             // 0..1
- *     alternatives: [{ label: string, confidence: number }],
- *     source: 'mock' | 'remote',
+ *     alternatives: [{ label, confidence, name?, kind? }],
+ *     source: string,
+ *     crop?: string,                                  // which plant, when the provider says
+ *     advice?: { name, kind, crops, explanation, actions },  // provider-supplied treatment advice
  *   }
  *
- * With VISION_API_URL unset the deterministic mock below runs, so the whole flow works offline.
+ * Providers are chosen by which credentials are present, most specific first:
+ *   1. CROP_HEALTH_API_KEY -> crop.health (Kindwise), a purpose-built crop disease model
+ *   2. VISION_API_URL      -> a generic label/score endpoint (your own model)
+ *   3. neither             -> deterministic mock, so the whole flow works offline
  */
 
 const MOCK_LATENCY_MS = 700;
 
 export async function classifyImage({ buffer, mimeType }) {
+  if (process.env.CROP_HEALTH_API_KEY) {
+    const prediction = await identifyWithCropHealth({
+      buffer,
+      apiKey: process.env.CROP_HEALTH_API_KEY,
+      endpoint: process.env.CROP_HEALTH_API_URL,
+      language: process.env.CROP_HEALTH_LANGUAGE,
+    });
+    return { ...prediction, source: 'crop.health' };
+  }
+
   const endpoint = process.env.VISION_API_URL;
   if (!endpoint) {
     return mockClassify(buffer);
   }
   return remoteClassify({ buffer, mimeType, endpoint });
+}
+
+/** Name of the active provider, for /api/health. */
+export function describeProvider() {
+  if (process.env.CROP_HEALTH_API_KEY) return 'crop.health';
+  return process.env.VISION_API_URL ? 'remote' : 'mock';
 }
 
 async function remoteClassify({ buffer, mimeType, endpoint }) {

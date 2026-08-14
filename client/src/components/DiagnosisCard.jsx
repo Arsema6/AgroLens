@@ -19,7 +19,9 @@ export default function DiagnosisCard({ diagnosis }) {
           <Icon name={kind.icon} className="h-8 w-8" title={kind.label} />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-extrabold uppercase tracking-wide text-soil-700">{kind.label}</p>
+          <p className="text-sm font-extrabold uppercase tracking-wide text-soil-700">
+            {diagnosis.crop ? `${kind.label} · ${diagnosis.crop}` : kind.label}
+          </p>
           <h2 className="text-2xl leading-tight">{diagnosis.name}</h2>
         </div>
       </div>
