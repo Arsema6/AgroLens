@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import multer from 'multer';
 
-import { getAdvice } from '../services/adviceCatalog.js';
+import { getAdvice, hasAdvice } from '../services/adviceCatalog.js';
 import { classifyImage } from '../services/visionModel.js';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -44,7 +44,7 @@ analyzeRouter.post('/analyze', upload.single('image'), async (req, res, next) =>
 });
 
 function buildScanResult(prediction) {
-  const advice = getAdvice(prediction.label);
+  const advice = resolveAdvice(prediction);
 
   return {
     scanId: randomUUID(),
@@ -55,6 +55,7 @@ function buildScanResult(prediction) {
       name: advice.name,
       kind: advice.kind,
       crops: advice.crops,
+      crop: prediction.crop ?? null,
       confidence: prediction.confidence,
       confidenceBand: toConfidenceBand(prediction.confidence),
       explanation: advice.explanation,
@@ -62,15 +63,39 @@ function buildScanResult(prediction) {
     actions: advice.actions,
     alternatives: (prediction.alternatives ?? []).map((alternative) => {
       const alternativeAdvice = getAdvice(alternative.label);
+      const preferLocal = hasAdvice(alternative.label);
       return {
         label: alternative.label,
-        name: alternativeAdvice.name,
-        kind: alternativeAdvice.kind,
+        name: preferLocal ? alternativeAdvice.name : (alternative.name ?? alternativeAdvice.name),
+        kind: preferLocal ? alternativeAdvice.kind : (alternative.kind ?? alternativeAdvice.kind),
         confidence: alternative.confidence,
         confidenceBand: toConfidenceBand(alternative.confidence),
       };
     }),
   };
+}
+
+/**
+ * Our own catalog copy is written for low-literacy field use, so it wins whenever we have an entry
+ * for the label. Otherwise a provider's advice is used and backfilled from the fallback entry, which
+ * keeps a live model emitting unfamiliar labels useful instead of generic.
+ */
+function resolveAdvice(prediction) {
+  const local = getAdvice(prediction.label);
+  if (!prediction.advice || hasAdvice(prediction.label)) return local;
+
+  const { advice } = prediction;
+  return {
+    name: advice.name || local.name,
+    kind: advice.kind || local.kind,
+    crops: nonEmptyList(advice.crops) ?? local.crops,
+    explanation: advice.explanation || local.explanation,
+    actions: nonEmptyList(advice.actions) ?? local.actions,
+  };
+}
+
+function nonEmptyList(value) {
+  return Array.isArray(value) && value.length > 0 ? value : null;
 }
 
 /** Farmers see a band, not a decimal: high >= 0.75, medium >= 0.5, otherwise low. */

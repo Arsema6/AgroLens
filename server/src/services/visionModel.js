@@ -1,29 +1,64 @@
 import crypto from 'node:crypto';
 
 import { knownLabels } from './adviceCatalog.js';
+import { identifyWithKindwise } from './providers/kindwise.js';
 
 /**
- * PLACEHOLDER image classifier.
+ * The single seam between AgroLens and whatever names the problem in the photo.
  *
- * Wire your own model here. Contract expected by the rest of the app:
  *   classifyImage({ buffer, mimeType }) -> {
- *     label: string,                                  // key in adviceCatalog, or 'unknown'
+ *     label: string,                                  // key in adviceCatalog, or a provider slug
  *     confidence: number,                             // 0..1
- *     alternatives: [{ label: string, confidence: number }],
- *     source: 'mock' | 'remote',
+ *     alternatives: [{ label, confidence, name?, kind? }],
+ *     source: string,
+ *     crop?: string,                                  // which plant, when the provider says
+ *     advice?: { name, kind, crops, explanation, actions },  // provider-supplied treatment advice
  *   }
  *
- * With VISION_API_URL unset the deterministic mock below runs, so the whole flow works offline.
+ * Providers are chosen by which credentials are present, most specific first:
+ *   1. CROP_HEALTH_API_KEY -> crop.health (Kindwise), a purpose-built crop disease model
+ *   2. PLANT_ID_API_KEY    -> plant.id (Kindwise), the wider plant health model
+ *   3. VISION_API_URL      -> a generic label/score endpoint (your own model)
+ *   4. none                -> deterministic mock, so the whole flow works offline
  */
 
 const MOCK_LATENCY_MS = 700;
 
+/** Kindwise issues a key per service, so the key that is set also picks the service. */
+const KINDWISE_PROVIDERS = [
+  { service: 'crop.health', keyVar: 'CROP_HEALTH_API_KEY', urlVar: 'CROP_HEALTH_API_URL' },
+  { service: 'plant.id', keyVar: 'PLANT_ID_API_KEY', urlVar: 'PLANT_ID_API_URL' },
+];
+
 export async function classifyImage({ buffer, mimeType }) {
+  const kindwise = activeKindwiseProvider();
+  if (kindwise) {
+    const prediction = await identifyWithKindwise({
+      buffer,
+      apiKey: process.env[kindwise.keyVar],
+      service: kindwise.service,
+      endpoint: process.env[kindwise.urlVar],
+      language: process.env.KINDWISE_LANGUAGE,
+    });
+    return { ...prediction, source: kindwise.service };
+  }
+
   const endpoint = process.env.VISION_API_URL;
   if (!endpoint) {
     return mockClassify(buffer);
   }
   return remoteClassify({ buffer, mimeType, endpoint });
+}
+
+/** Name of the active provider, for /api/health. */
+export function describeProvider() {
+  const kindwise = activeKindwiseProvider();
+  if (kindwise) return kindwise.service;
+  return process.env.VISION_API_URL ? 'remote' : 'mock';
+}
+
+function activeKindwiseProvider() {
+  return KINDWISE_PROVIDERS.find(({ keyVar }) => process.env[keyVar]) ?? null;
 }
 
 async function remoteClassify({ buffer, mimeType, endpoint }) {
