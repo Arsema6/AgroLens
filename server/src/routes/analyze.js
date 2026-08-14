@@ -88,10 +88,14 @@ function resolveAdvice(prediction) {
   return {
     name: advice.name || local.name,
     kind: advice.kind || local.kind,
-    crops: advice.crops?.length ? advice.crops : local.crops,
+    crops: nonEmptyList(advice.crops) ?? local.crops,
     explanation: advice.explanation || local.explanation,
-    actions: advice.actions?.length ? advice.actions : local.actions,
+    actions: nonEmptyList(advice.actions) ?? local.actions,
   };
+}
+
+function nonEmptyList(value) {
+  return Array.isArray(value) && value.length > 0 ? value : null;
 }
 
 /** Farmers see a band, not a decimal: high >= 0.75, medium >= 0.5, otherwise low. */
