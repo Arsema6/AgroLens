@@ -19,6 +19,12 @@ export default function ScanPage() {
   const busy = status === 'working';
 
   async function handleSelect(file) {
+    if (!file.type.startsWith('image/')) {
+      setStatus('error');
+      setError('Only photos can be checked. Choose a picture of the plant.');
+      return;
+    }
+
     setError(null);
     setPreview({ file, url: URL.createObjectURL(file) });
     setStatus('working');

@@ -15,14 +15,18 @@ export async function makeThumbnail(file) {
 
 async function readBitmap(file) {
   if ('createImageBitmap' in window) {
-    return createImageBitmap(file);
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      throw new Error('That photo could not be opened. Take another one.');
+    }
   }
   const url = URL.createObjectURL(file);
   try {
     return await new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('That file is not a readable image.'));
+      image.onerror = () => reject(new Error('That photo could not be opened. Take another one.'));
       image.src = url;
     });
   } finally {
