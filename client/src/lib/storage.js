@@ -36,12 +36,19 @@ export function clearScans() {
 }
 
 function persist(scans) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(scans));
-  } catch {
-    // Quota exceeded: drop the oldest half rather than losing the newest scan.
-    if (scans.length > 1) {
-      persist(scans.slice(0, Math.floor(scans.length / 2)));
+  // Quota exceeded: drop the oldest half rather than losing the newest scan, but give up once
+  // even a single scan will not fit so a failing localStorage is reported instead of masked.
+  let candidate = scans;
+  for (;;) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(candidate));
+      return;
+    } catch (error) {
+      if (candidate.length <= 1) {
+        console.warn('AgroLens: could not save scan history', error);
+        return;
+      }
+      candidate = candidate.slice(0, Math.floor(candidate.length / 2));
     }
   }
 }

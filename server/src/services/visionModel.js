@@ -76,11 +76,17 @@ function normalisePredictions(payload) {
 
   return raw
     .map((item) => ({
-      label: item.label ?? item.class ?? item.name ?? 'unknown',
-      confidence: Number(item.confidence ?? item.score ?? item.probability ?? 0),
+      label: String(item.label ?? item.class ?? item.name ?? '').trim(),
+      confidence: clampConfidence(item.confidence ?? item.score ?? item.probability),
     }))
-    .filter((item) => Number.isFinite(item.confidence))
+    .filter((item) => item.label.length > 0 && Number.isFinite(item.confidence))
     .sort((a, b) => b.confidence - a.confidence);
+}
+
+/** Bands and percentages downstream assume 0..1, so provider scores are coerced into that range. */
+function clampConfidence(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.min(1, Math.max(0, numeric)) : Number.NaN;
 }
 
 /**
