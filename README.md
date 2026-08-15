@@ -62,6 +62,14 @@ cp server/.env.example server/.env
 npm run dev          # client on :5173, API on :8787
 ```
 
+On Windows use `copy server\.env.example server\.env`.
+
+**Camera:** "Take photo" opens an in-page viewfinder (`getUserMedia`). Browsers only allow that on
+localhost or HTTPS, so a phone reaching the dev server over plain HTTP falls back to its own camera
+app, and a machine without a camera falls back to the file picker. For the viewfinder on a phone,
+generate a cert into `client/certs/` (`mkcert -cert-file certs/cert.pem -key-file certs/key.pem
+<your-lan-ip> localhost`) and the dev server switches to HTTPS.
+
 ## Wiring your own model
 
 `server/src/services/visionModel.js` exports `classifyImage({ buffer, mimeType })` and returns
